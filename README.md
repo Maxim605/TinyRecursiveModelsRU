@@ -1,39 +1,39 @@
-# Less is More: Recursive Reasoning with Tiny Networks
+# Меньше значит больше: Рекурсивное рассуждение с маленькими сетями
 
-This is the codebase for the paper: "Less is More: Recursive Reasoning with Tiny Networks". TRM is a recursive reasoning approach that achieves amazing scores of 45% on ARC-AGI-1 and 8% on ARC-AGI-2 using a tiny 7M parameters neural network.
+Это репозиторий для статьи: "Less is More: Recursive Reasoning with Tiny Networks". TRM — это подход рекурсивного рассуждения, который достигает впечатляющих результатов: 45% на ARC-AGI-1 и 8% на ARC-AGI-2, используя небольшую нейронную сеть всего с 7M параметров.
 
-[Paper](https://arxiv.org/abs/2510.04871)
+[Статья](https://arxiv.org/abs/2510.04871)
 
-### Motivation
+### Мотивация
 
-Tiny Recursion Model (TRM) is a recursive reasoning model that achieves amazing scores of 45% on ARC-AGI-1 and 8% on ARC-AGI-2 with a tiny 7M parameters neural network. The idea that one must rely on massive foundational models trained for millions of dollars by some big corporation in order to achieve success on hard tasks is a trap. Currently, there is too much focus on exploiting LLMs rather than devising and expanding new lines of direction. With recursive reasoning, it turns out that “less is more”: you don’t always need to crank up model size in order for a model to reason and solve hard problems. A tiny model pretrained from scratch, recursing on itself and updating its answers over time, can achieve a lot without breaking the bank.
+Tiny Recursion Model (TRM) — это модель рекурсивного рассуждения, которая достигает впечатляющих результатов: 45% на ARC-AGI-1 и 8% на ARC-AGI-2, используя небольшую нейронную сеть всего с 7M параметров. Идея о том, что для успеха на сложных задачах необходимо полагаться на массивные базовые модели, обученные за миллионы долларов крупными корпорациями, является ловушкой. В настоящее время слишком много внимания уделяется использованию LLM, а не разработке и расширению новых направлений. С рекурсивным рассуждением оказывается, что "меньше значит больше": не всегда нужно увеличивать размер модели, чтобы она могла рассуждать и решать сложные задачи. Небольшая модель, предобученная с нуля, рекурсивно обрабатывающая саму себя и обновляющая свои ответы со временем, может достичь многого без больших затрат.
 
-This work came to be after I learned about the recent innovative Hierarchical Reasoning Model (HRM). I was amazed that an approach using small models could do so well on hard tasks like the ARC-AGI competition (reaching 40% accuracy when normally only Large Language Models could compete). But I kept thinking that it is too complicated, relying too much on biological arguments about the human brain, and that this recursive reasoning process could be greatly simplified and improved. Tiny Recursion Model (TRM) simplifies recursive reasoning to its core essence, which ultimately has nothing to do with the human brain, does not require any mathematical (fixed-point) theorem, nor any hierarchy.
+Эта работа появилась после того, как я узнал о недавней инновационной модели Hierarchical Reasoning Model (HRM). Я была поражена тем, что подход с использованием небольших моделей может так хорошо работать на сложных задачах, таких как соревнование ARC-AGI (достигая 40% точности, когда обычно только большие языковые модели могли конкурировать). Но я продолжала думать, что это слишком сложно, слишком полагается на биологические аргументы о человеческом мозге, и что этот процесс рекурсивного рассуждения можно значительно упростить и улучшить. Tiny Recursion Model (TRM) упрощает рекурсивное рассуждение до его сути, которая в конечном итоге не имеет ничего общего с человеческим мозгом, не требует никаких математических теорем (о неподвижной точке), ни какой-либо иерархии.
 
-### How TRM works
+### Как работает TRM
 
 <p align="center">
   <img src="https://AlexiaJM.github.io/assets/images/TRM_fig.png" alt="TRM"  style="width: 30%;">
 </p>
 
-Tiny Recursion Model (TRM) recursively improves its predicted answer y with a tiny network. It starts with the embedded input question x and initial embedded answer y and latent z. For up to K improvements steps, it tries to improve its answer y. It does so by i) recursively updating n times its latent z given the question x, current answer y, and current latent z (recursive reasoning), and then ii) updating its answer y given the current answer y and current latent z. This recursive process allows the model to progressively improve its answer (potentially addressing any errors from its previous answer) in an extremely parameter-efficient manner while minimizing overfitting.
+Tiny Recursion Model (TRM) рекурсивно улучшает свой предсказанный ответ y с помощью небольшой сети. Она начинается с эмбеддинга входного вопроса x и начального эмбеддинга ответа y и латентного z. До K шагов улучшения она пытается улучшить свой ответ y. Это делается путем i) рекурсивного обновления n раз латентного z с учетом вопроса x, текущего ответа y и текущего латентного z (рекурсивное рассуждение), а затем ii) обновления ответа y с учетом текущего ответа y и текущего латентного z. Этот рекурсивный процесс позволяет модели постепенно улучшать свой ответ (потенциально исправляя любые ошибки из предыдущего ответа) чрезвычайно эффективным по параметрам способом, минимизируя переобучение.
 
-### Requirements
+### Требования
 
-Installation should take a few minutes. For the smallest experiments on Sudoku-Extreme (pretrain_mlp_t_sudoku), you need 1 GPU with enough memory. With 1 L40S (48Gb Ram), it takes around 18h to finish. In case that you run into issues due to library versions, here is the requirements with the exact versions used: [specific_requirements.txt](https://github.com/SamsungSAILMontreal/TinyRecursiveModels/blob/main/specific_requirements.txt).
+Установка должна занять несколько минут. Для самых маленьких экспериментов на Sudoku-Extreme (pretrain_mlp_t_sudoku) вам нужна 1 GPU с достаточным объемом памяти. С 1 L40S (48Gb RAM) это займет около 18 часов. Если у вас возникнут проблемы из-за версий библиотек, вот требования с точными версиями: [specific_requirements.txt](https://github.com/SamsungSAILMontreal/TinyRecursiveModels/blob/main/specific_requirements.txt).
 
-- Python 3.10 (or similar)
-- Cuda 12.6.0 (or similar)
+- Python 3.10 (или аналогичный)
+- Cuda 12.6.0 (или аналогичный)
 
 ```bash
 pip install --upgrade pip wheel setuptools
-pip install --pre --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126 # install torch based on your cuda version
-pip install -r requirements.txt # install requirements
+pip install --pre --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126 # установка torch в зависимости от вашей версии cuda
+pip install -r requirements.txt # установка зависимостей
 pip install --no-cache-dir --no-build-isolation adam-atan2 
-wandb login YOUR-LOGIN # login if you want the logger to sync results to your Weights & Biases (https://wandb.ai/)
+wandb login YOUR-LOGIN # вход, если вы хотите, чтобы логирование синхронизировало результаты с вашим Weights & Biases (https://wandb.ai/)
 ```
 
-### Dataset Preparation
+### Подготовка датасетов
 
 ```bash
 # ARC-AGI-1
@@ -50,18 +50,18 @@ python -m dataset.build_arc_dataset \
   --subsets training2 evaluation2 concept \
   --test-set-name evaluation2
 
-## Note: You cannot train on both ARC-AGI-1 and ARC-AGI-2 and evaluate them both because ARC-AGI-2 training data contains some ARC-AGI-1 eval data
+## Примечание: Вы не можете обучать на обоих ARC-AGI-1 и ARC-AGI-2 и оценивать их оба, потому что обучающие данные ARC-AGI-2 содержат некоторые оценочные данные ARC-AGI-1
 
 # Sudoku-Extreme
-python dataset/build_sudoku_dataset.py --output-dir data/sudoku-extreme-1k-aug-1000  --subsample-size 1000 --num-aug 1000  # 1000 examples, 1000 augments
+python dataset/build_sudoku_dataset.py --output-dir data/sudoku-extreme-1k-aug-1000  --subsample-size 1000 --num-aug 1000  # 1000 примеров, 1000 аугментаций
 
 # Maze-Hard
-python dataset/build_maze_dataset.py # 1000 examples, 8 augments
+python dataset/build_maze_dataset.py # 1000 примеров, 8 аугментаций
 ```
 
-## Experiments
+## Эксперименты
 
-### Sudoku-Extreme (assuming 1 L40S GPU):
+### Sudoku-Extreme (при условии 1 L40S GPU):
 
 ```bash
 run_name="pretrain_mlp_t_sudoku"
@@ -76,7 +76,7 @@ arch.L_layers=2 \
 arch.H_cycles=3 arch.L_cycles=6 \
 +run_name=${run_name} ema=True
 
-Expected: Around 87% exact-accuracy (+- 2%)
+Ожидаемый результат: Около 87% точной точности (+- 2%)
 
 run_name="pretrain_att_sudoku"
 python pretrain.py \
@@ -90,11 +90,11 @@ arch.H_cycles=3 arch.L_cycles=6 \
 +run_name=${run_name} ema=True
 ```
 
-Expected: Around 75% exact-accuracy (+- 2%)
+Ожидаемый результат: Около 75% точной точности (+- 2%)
 
-*Runtime:* < 20 hours
+*Время выполнения:* < 20 часов
 
-### Maze-Hard (assuming 4 L40S GPUs):
+### Maze-Hard (при условии 4 L40S GPU):
 
 ```bash
 run_name="pretrain_att_maze30x30"
@@ -109,9 +109,9 @@ arch.H_cycles=3 arch.L_cycles=4 \
 +run_name=${run_name} ema=True
 ```
 
-*Runtime:* < 24 hours
+*Время выполнения:* < 24 часов
 
-Actually, you can run Maze-Hard with 1 L40S GPU by reducing the batch-size with no noticable loss in performance:
+На самом деле, вы можете запустить Maze-Hard с 1 L40S GPU, уменьшив размер батча без заметной потери производительности:
 
 ```bash
 run_name="pretrain_att_maze30x30_1gpu"
@@ -126,10 +126,10 @@ arch.H_cycles=3 arch.L_cycles=4 \
 +run_name=${run_name} ema=True
 ```
 
-*Runtime:* < 24 hours
+*Время выполнения:* < 24 часов
 
 
-### ARC-AGI-1 (assuming 4 H-100 GPUs):
+### ARC-AGI-1 (при условии 4 H-100 GPU):
 
 ```bash
 run_name="pretrain_att_arc1concept_4"
@@ -142,9 +142,9 @@ arch.H_cycles=3 arch.L_cycles=4 \
 
 ```
 
-*Runtime:* ~3 days
+*Время выполнения:* ~3 дня
 
-### ARC-AGI-2 (assuming 4 H-100 GPUs):
+### ARC-AGI-2 (при условии 4 H-100 GPU):
 
 ```bash
 run_name="pretrain_att_arc2concept_4"
@@ -157,12 +157,12 @@ arch.H_cycles=3 arch.L_cycles=4 \
 
 ```
 
-*Runtime:* ~3 days
+*Время выполнения:* ~3 дня
 
 
-## Reference
+## Ссылки
 
-If you find our work useful, please consider citing:
+Если вы найдете нашу работу полезной, пожалуйста, рассмотрите возможность цитирования:
 
 ```bibtex
 @misc{jolicoeurmartineau2025morerecursivereasoningtiny,
@@ -176,7 +176,7 @@ If you find our work useful, please consider citing:
 }
 ```
 
-and the Hierarchical Reasoning Model (HRM):
+и иерархической модели рассуждения (HRM):
 
 ```bibtex
 @misc{wang2025hierarchicalreasoningmodel,
@@ -190,4 +190,4 @@ and the Hierarchical Reasoning Model (HRM):
 }
 ```
 
-This code is based on the Hierarchical Reasoning Model [code](https://github.com/sapientinc/HRM) and the Hierarchical Reasoning Model Analysis [code](https://github.com/arcprize/hierarchical-reasoning-model-analysis).
+Этот код основан на иерархической модели рассуждения [код](https://github.com/sapientinc/HRM) и анализе иерархической модели рассуждения [код](https://github.com/arcprize/hierarchical-reasoning-model-analysis).
