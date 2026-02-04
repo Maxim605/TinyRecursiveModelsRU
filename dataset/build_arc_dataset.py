@@ -1,3 +1,7 @@
+"""
+Модуль для построения датасета ARC-AGI из исходных JSON файлов.
+Обрабатывает головоломки, применяет аугментации и сохраняет в формате для обучения.
+"""
 from typing import List, Tuple, Dict
 from dataclasses import dataclass
 import os
@@ -15,14 +19,17 @@ cli = ArgParser()
 
 
 class DataProcessConfig(BaseModel):
-    input_file_prefix: str
-    output_dir: str
-    subsets: List[str]
-    test_set_name: str
-    test_set_name2: str = "your_test_set"
-    seed: int = 42
-    num_aug: int = 1000
-    puzzle_identifiers_start: int = 1 # start > 1 to handle multiple datasets
+    """
+    Конфигурация для обработки датасета ARC-AGI.
+    """
+    input_file_prefix: str  # Префикс входных файлов (например, "kaggle/combined/arc-agi")
+    output_dir: str  # Директория для сохранения обработанного датасета
+    subsets: List[str]  # Список подмножеств для обработки (training, evaluation, concept и т.д.)
+    test_set_name: str  # Название тестового набора
+    test_set_name2: str = "your_test_set"  # Второе название тестового набора
+    seed: int = 42  # Семя для генератора случайных чисел
+    num_aug: int = 1000  # Количество аугментаций на головоломку
+    puzzle_identifiers_start: int = 1  # Начало идентификаторов головоломок (start > 1 для обработки нескольких датасетов)
     
 ARCMaxGridSize = 30
 ARCAugmentRetriesFactor = 5
@@ -37,32 +44,53 @@ class ARCPuzzle:
 
     
 def arc_grid_to_np(grid: List[List[int]]):
+    """
+    Преобразует сетку ARC из списка списков в numpy массив.
+    
+    Параметры:
+        grid: Сетка в виде списка списков целых чисел
+    
+    Возвращает:
+        Numpy массив типа uint8
+    """
     arr = np.array(grid)
 
-    # Shape check
+    # Проверка формы
     assert arr.ndim == 2
     assert arr.shape[0] <= ARCMaxGridSize and arr.shape[1] <= ARCMaxGridSize
-    # Element check
+    # Проверка элементов
     assert np.all((arr >= 0) & (arr <= 9))
     return arr.astype(np.uint8)
 
 
 def np_grid_to_seq_translational_augment(inp: np.ndarray, out: np.ndarray, do_translation: bool):
-    # PAD: 0, <eos>: 1, digits: 2 ... 11
-    # Compute random top-left pad
+    """
+    Преобразует сетки в последовательности с возможной трансляционной аугментацией.
+    Добавляет padding и токены конца последовательности (<eos>).
+    
+    Параметры:
+        inp: Входная сетка
+        out: Выходная сетка
+        do_translation: Применять ли случайную трансляцию
+    
+    Возвращает:
+        Кортеж (input_seq, output_seq) - последовательности входной и выходной сеток
+    """
+    # PAD: 0, <eos>: 1, цифры: 2 ... 11
+    # Вычисление случайного верхнего левого padding
     if do_translation:
         pad_r = np.random.randint(0, ARCMaxGridSize - max(inp.shape[0], out.shape[0]) + 1)
         pad_c = np.random.randint(0, ARCMaxGridSize - max(inp.shape[1], out.shape[1]) + 1)
     else:
         pad_r = pad_c = 0
 
-    # Pad grid
+    # Добавление padding к сетке
     result = []
     for grid in [inp, out]:
         nrow, ncol = grid.shape
         grid = np.pad(grid + 2, ((pad_r, ARCMaxGridSize - pad_r - nrow), (pad_c, ARCMaxGridSize - pad_c - ncol)), constant_values=0)
 
-        # Add <eos>
+        # Добавление <eos>
         eos_row, eos_col = pad_r + nrow, pad_c + ncol
         if eos_row < ARCMaxGridSize:
             grid[eos_row, pad_c:eos_col] = 1
@@ -96,9 +124,21 @@ def puzzle_hash(puzzle: dict):
 
 
 def aug(name: str):
-    # Augment plan
+    """
+    Создает функцию аугментации для головоломки.
+    Применяет случайное диэдрическое преобразование и перестановку цветов.
+    
+    Параметры:
+        name: Имя головоломки
+    
+    Возвращает:
+        Кортеж (augmented_name, map_function):
+        - augmented_name: Имя с информацией об аугментации
+        - map_function: Функция для применения аугментации к сетке
+    """
+    # План аугментации
     trans_id = np.random.randint(0, 8)
-    mapping = np.concatenate([np.arange(0, 1, dtype=np.uint8), np.random.permutation(np.arange(1, 10, dtype=np.uint8))])  # Permute colors, Excluding "0" (black)
+    mapping = np.concatenate([np.arange(0, 1, dtype=np.uint8), np.random.permutation(np.arange(1, 10, dtype=np.uint8))])  # Перестановка цветов, исключая "0" (черный)
     
     name_with_aug_repr = f"{name}{PuzzleIdSeparator}t{trans_id}{PuzzleIdSeparator}{''.join(str(x) for x in mapping)}"
 
@@ -109,12 +149,24 @@ def aug(name: str):
 
 
 def inverse_aug(name: str):
-    # Inverse the "aug" function
+    """
+    Создает обратную функцию аугментации.
+    Восстанавливает исходную головоломку из аугментированной.
+    
+    Параметры:
+        name: Имя головоломки (может содержать информацию об аугментации)
+    
+    Возвращает:
+        Кортеж (original_name, inverse_map_function):
+        - original_name: Исходное имя головоломки
+        - inverse_map_function: Функция для обратного преобразования сетки
+    """
+    # Обращение функции "aug"
     if PuzzleIdSeparator not in name:
         return name, lambda x: x
 
     trans_id, perm = name.split(PuzzleIdSeparator)[-2:]
-    trans_id = int(trans_id[1:])  # Remove "t" letter
+    trans_id = int(trans_id[1:])  # Удаление буквы "t"
     inv_perm = np.argsort(list(perm)).astype(np.uint8)
     
     def _map_grid(grid: np.ndarray):

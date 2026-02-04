@@ -1,3 +1,7 @@
+"""
+Основной модуль для предобучения моделей рекурсивного рассуждения.
+Реализует цикл обучения с поддержкой распределенного обучения, EMA и оценки качества.
+"""
 from typing import Optional, Any, Sequence, List
 from dataclasses import dataclass
 import os
@@ -26,75 +30,104 @@ from models.ema import EMAHelper
 
 
 class LossConfig(pydantic.BaseModel):
+    """
+    Конфигурация функции потерь.
+    """
     model_config = pydantic.ConfigDict(extra='allow')
-    name: str
+    name: str  # Имя класса функции потерь
 
 
 class ArchConfig(pydantic.BaseModel):
+    """
+    Конфигурация архитектуры модели.
+    """
     model_config = pydantic.ConfigDict(extra='allow')
-    name: str
-    loss: LossConfig
+    name: str  # Имя класса модели
+    loss: LossConfig  # Конфигурация функции потерь
 
 
 class EvaluatorConfig(pydantic.BaseModel):
+    """
+    Конфигурация оценщика качества модели.
+    """
     model_config = pydantic.ConfigDict(extra="allow")
-    name: str
+    name: str  # Имя класса оценщика
 
 
 class PretrainConfig(pydantic.BaseModel):
-    # Config
-    arch: ArchConfig
-    # Data
-    data_paths: List[str]
-    data_paths_test: List[str] = []
-    # Evaluators
-    evaluators: List[EvaluatorConfig] = []
+    """
+    Основная конфигурация для предобучения модели.
+    """
+    # Конфигурация
+    arch: ArchConfig  # Архитектура модели
+    # Данные
+    data_paths: List[str]  # Пути к обучающим датасетам
+    data_paths_test: List[str] = []  # Пути к тестовым датасетам
+    # Оценщики
+    evaluators: List[EvaluatorConfig] = []  # Список оценщиков качества
 
-    # Hyperparams
-    global_batch_size: int
-    epochs: int
+    # Гиперпараметры
+    global_batch_size: int  # Глобальный размер батча
+    epochs: int  # Количество эпох обучения
 
-    lr: float
-    lr_min_ratio: float
-    lr_warmup_steps: int
+    lr: float  # Скорость обучения
+    lr_min_ratio: float  # Минимальное отношение к начальной скорости обучения
+    lr_warmup_steps: int  # Количество шагов разогрева learning rate
 
-    weight_decay: float
-    beta1: float
-    beta2: float
+    weight_decay: float  # Затухание весов
+    beta1: float  # Параметр beta1 для оптимизатора
+    beta2: float  # Параметр beta2 для оптимизатора
 
-    # Puzzle embedding
-    puzzle_emb_lr: float
-    puzzle_emb_weight_decay: float
+    # Эмбеддинги головоломок
+    puzzle_emb_lr: float  # Скорость обучения для эмбеддингов головоломок
+    puzzle_emb_weight_decay: float  # Затухание весов для эмбеддингов головоломок
 
-    # Names
-    project_name: Optional[str] = None
-    run_name: Optional[str] = None
-    load_checkpoint: Optional[str] = None
-    checkpoint_path: Optional[str] = None
+    # Имена
+    project_name: Optional[str] = None  # Название проекта для wandb
+    run_name: Optional[str] = None  # Название запуска
+    load_checkpoint: Optional[str] = None  # Путь к чекпоинту для загрузки
+    checkpoint_path: Optional[str] = None  # Путь для сохранения чекпоинтов
 
-    # Extras
-    seed: int = 0
-    checkpoint_every_eval: bool = False
-    eval_interval: Optional[int] = None
-    min_eval_interval: Optional[int] = 0 # when to start eval
-    eval_save_outputs: List[str] = []
+    # Дополнительно
+    seed: int = 0  # Семя для генератора случайных чисел
+    checkpoint_every_eval: bool = False  # Сохранять чекпоинт после каждой оценки
+    eval_interval: Optional[int] = None  # Интервал оценки (в эпохах)
+    min_eval_interval: Optional[int] = 0  # Когда начинать оценку
+    eval_save_outputs: List[str] = []  # Ключи выходных данных для сохранения при оценке
 
-    ema: bool = False # use Exponential-Moving-Average
-    ema_rate: float = 0.999 # EMA-rate
-    freeze_weights: bool = False # If True, freeze weights and only learn the embeddings
+    ema: bool = False  # Использовать экспоненциальное скользящее среднее
+    ema_rate: float = 0.999  # Коэффициент EMA
+    freeze_weights: bool = False  # Если True, заморозить веса и обучать только эмбеддинги
 
 @dataclass
 class TrainState:
-    model: nn.Module
-    optimizers: Sequence[torch.optim.Optimizer]
-    optimizer_lrs: Sequence[float]
-    carry: Any
+    """
+    Состояние процесса обучения.
+    Хранит модель, оптимизаторы, состояние переноса и счетчики шагов.
+    """
+    model: nn.Module  # Модель для обучения
+    optimizers: Sequence[torch.optim.Optimizer]  # Список оптимизаторов
+    optimizer_lrs: Sequence[float]  # Базовые скорости обучения для каждого оптимизатора
+    carry: Any  # Состояние переноса модели (для ACT)
 
-    step: int
-    total_steps: int
+    step: int  # Текущий шаг обучения
+    total_steps: int  # Общее количество шагов обучения
 
 
 def create_dataloader(config: PretrainConfig, split: str, rank: int, world_size: int, **kwargs):
+    """
+    Создает DataLoader для указанного раздела датасета.
+    
+    Параметры:
+        config: Конфигурация предобучения
+        split: Раздел датасета ('train' или 'test')
+        rank: Ранг процесса в распределенном обучении
+        world_size: Количество процессов
+        **kwargs: Дополнительные параметры для PuzzleDatasetConfig
+    
+    Возвращает:
+        Кортеж (dataloader, metadata): DataLoader и метаданные датасета
+    """
     dataset = PuzzleDataset(PuzzleDatasetConfig(
         seed=config.seed,
         dataset_paths=config.data_paths_test if len(config.data_paths_test)>0 and split=="test" else config.data_paths,
@@ -114,16 +147,31 @@ def create_dataloader(config: PretrainConfig, split: str, rank: int, world_size:
 
 
 def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, rank: int, world_size: int):
+    """
+    Создает модель с головой потерь и настраивает оптимизаторы.
+    
+    Параметры:
+        config: Конфигурация предобучения
+        train_metadata: Метаданные обучающего датасета
+        rank: Ранг процесса в распределенном обучении
+        world_size: Количество процессов
+    
+    Возвращает:
+        Кортеж (model, optimizers, optimizer_lrs):
+        - model: Модель с головой потерь
+        - optimizers: Список оптимизаторов
+        - optimizer_lrs: Базовые скорости обучения для каждого оптимизатора
+    """
     model_cfg = dict(
         **config.arch.__pydantic_extra__,  # type: ignore
         batch_size=config.global_batch_size // world_size,
         vocab_size=train_metadata.vocab_size,
         seq_len=train_metadata.seq_len,
         num_puzzle_identifiers=train_metadata.num_puzzle_identifiers,
-        causal=False  # Non-autoregressive
+        causal=False  # Неавтогрессивная модель
     )
 
-    # Instantiate model with loss head
+    # Создание экземпляра модели с головой потерь
     model_cls = load_model_class(config.arch.name)
     loss_head_cls = load_model_class(config.arch.loss.name)
 
@@ -134,11 +182,11 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
         if "DISABLE_COMPILE" not in os.environ:
             model = torch.compile(model)  # type: ignore
 
-        # Load checkpoint
+        # Загрузка чекпоинта
         if rank == 0:
             load_checkpoint(model, config)
 
-        # Broadcast parameters from rank 0
+        # Трансляция параметров с ранга 0
         if world_size > 1:
             with torch.no_grad():
                 for param in list(model.parameters()) + list(model.buffers()):
@@ -207,6 +255,20 @@ def mix_weights_direct(device, alpha, net, nets):
 def cosine_schedule_with_warmup_lr_lambda(
     current_step: int, *, base_lr: float, num_warmup_steps: int, num_training_steps: int, min_ratio: float = 0.0, num_cycles: float = 0.5
 ):
+    """
+    Вычисляет коэффициент learning rate для косинусного расписания с разогревом.
+    
+    Параметры:
+        current_step: Текущий шаг обучения
+        base_lr: Базовая скорость обучения
+        num_warmup_steps: Количество шагов разогрева
+        num_training_steps: Общее количество шагов обучения
+        min_ratio: Минимальное отношение к базовой скорости обучения
+        num_cycles: Количество циклов косинуса
+    
+    Возвращает:
+        Коэффициент для умножения на базовую скорость обучения
+    """
     if current_step < num_warmup_steps:
         return base_lr * float(current_step) / float(max(1, num_warmup_steps))
 
@@ -215,10 +277,22 @@ def cosine_schedule_with_warmup_lr_lambda(
 
 
 def init_train_state(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, rank: int, world_size: int):
-    # Estimated total training steps
+    """
+    Инициализирует состояние обучения.
+    
+    Параметры:
+        config: Конфигурация предобучения
+        train_metadata: Метаданные обучающего датасета
+        rank: Ранг процесса в распределенном обучении
+        world_size: Количество процессов
+    
+    Возвращает:
+        Инициализированное состояние обучения
+    """
+    # Оценка общего количества шагов обучения
     total_steps = int(config.epochs * train_metadata.total_groups * train_metadata.mean_puzzle_examples / config.global_batch_size)
 
-    # Model
+    # Создание модели
     model, optimizers, optimizer_lrs = create_model(config, train_metadata, rank=rank, world_size=world_size)
 
     return TrainState(
@@ -233,7 +307,16 @@ def init_train_state(config: PretrainConfig, train_metadata: PuzzleDatasetMetada
 
 
 def save_train_state(config: PretrainConfig, train_state: TrainState):
-    # FIXME: Only saved model.
+    """
+    Сохраняет состояние обучения в чекпоинт.
+    
+    Примечание: В настоящее время сохраняется только модель, не оптимизаторы.
+    
+    Параметры:
+        config: Конфигурация предобучения
+        train_state: Состояние обучения для сохранения
+    """
+    # FIXME: Сохраняется только модель
     if config.checkpoint_path is None:
         return
 
@@ -242,20 +325,28 @@ def save_train_state(config: PretrainConfig, train_state: TrainState):
 
 
 def load_checkpoint(model: nn.Module, config: PretrainConfig):
+    """
+    Загружает чекпоинт модели.
+    Автоматически обрабатывает изменение размеров эмбеддингов головоломок.
+    
+    Параметры:
+        model: Модель для загрузки весов
+        config: Конфигурация предобучения
+    """
     if config.load_checkpoint is not None:
         print(f"Loading checkpoint {config.load_checkpoint}")
 
-        # Load state dict
+        # Загрузка словаря состояний
         state_dict = torch.load(config.load_checkpoint, map_location="cuda")
 
-        # Resize and reset puzzle emb if needed
+        # Изменение размера и сброс эмбеддингов головоломок при необходимости
         puzzle_emb_name = "_orig_mod.model.inner.puzzle_emb.weights"
         expected_shape: torch.Size = model.model.puzzle_emb.weights.shape  # type: ignore
         if puzzle_emb_name in state_dict:
             puzzle_emb = state_dict[puzzle_emb_name]
             if puzzle_emb.shape != expected_shape:
                 print(f"Resetting puzzle embedding as shape is different. Found {puzzle_emb.shape}, Expected {expected_shape}")
-                # Re-initialize using mean
+                # Повторная инициализация с использованием среднего значения
                 state_dict[puzzle_emb_name] = (
                     torch.mean(puzzle_emb, dim=0, keepdim=True).expand(expected_shape).contiguous()
                 )
@@ -263,6 +354,17 @@ def load_checkpoint(model: nn.Module, config: PretrainConfig):
 
 
 def compute_lr(base_lr: float, config: PretrainConfig, train_state: TrainState):
+    """
+    Вычисляет текущую скорость обучения на основе расписания.
+    
+    Параметры:
+        base_lr: Базовая скорость обучения
+        config: Конфигурация предобучения
+        train_state: Состояние обучения
+    
+    Возвращает:
+        Текущая скорость обучения
+    """
     return cosine_schedule_with_warmup_lr_lambda(
         current_step=train_state.step,
         base_lr=base_lr,
@@ -274,8 +376,18 @@ def compute_lr(base_lr: float, config: PretrainConfig, train_state: TrainState):
 
 
 def create_evaluators(config: PretrainConfig, eval_metadata: PuzzleDatasetMetadata) -> List[Any]:
+    """
+    Создает список оценщиков качества модели.
+    
+    Параметры:
+        config: Конфигурация предобучения
+        eval_metadata: Метаданные тестового датасета
+    
+    Возвращает:
+        Список оценщиков качества
+    """
     data_paths =config.data_paths_test if len(config.data_paths_test)>0 else config.data_paths
-    # Initialize evaluators
+    # Инициализация оценщиков
     evaluators = []
     for cfg in config.evaluators:
         for data_path in data_paths:
@@ -287,30 +399,44 @@ def create_evaluators(config: PretrainConfig, eval_metadata: PuzzleDatasetMetada
     return evaluators
 
 def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, global_batch_size: int, rank: int, world_size: int):
+    """
+    Обрабатывает один батч обучения.
+    
+    Параметры:
+        config: Конфигурация предобучения
+        train_state: Состояние обучения
+        batch: Батч данных
+        global_batch_size: Глобальный размер батча
+        rank: Ранг процесса в распределенном обучении
+        world_size: Количество процессов
+    
+    Возвращает:
+        Словарь метрик (только на ранге 0) или None
+    """
     train_state.step += 1
-    if train_state.step > train_state.total_steps:  # At most train_total_steps
+    if train_state.step > train_state.total_steps:  # Максимум train_total_steps
         return
 
-    # To device
+    # Перенос на устройство
     batch = {k: v.cuda() for k, v in batch.items()}
 
-    # Init carry if it is None
+    # Инициализация состояния переноса, если оно None
     if train_state.carry is None:
         with torch.device("cuda"):
             train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
 
-    # Forward
+    # Прямой проход
     train_state.carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
 
     ((1 / global_batch_size) * loss).backward()
 
-    # Allreduce
+    # Allreduce градиентов
     if world_size > 1:
         for param in train_state.model.parameters():
             if param.grad is not None:
                 dist.all_reduce(param.grad)
             
-    # Apply optimizer
+    # Применение оптимизатора
     lr_this_step = None    
     for optim, base_lr in zip(train_state.optimizers, train_state.optimizer_lrs):
         lr_this_step = compute_lr(base_lr, config, train_state)
@@ -321,12 +447,12 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
         optim.step()
         optim.zero_grad()
 
-    # Reduce metrics
+    # Сведение метрик
     if len(metrics):
         assert not any(v.requires_grad for v in metrics.values())
 
-        metric_keys = list(sorted(metrics.keys()))  # Sort keys to guarantee all processes use the same order.
-        # Reduce and reconstruct
+        metric_keys = list(sorted(metrics.keys()))  # Сортировка ключей для гарантии одинакового порядка во всех процессах
+        # Сведение и восстановление
         metric_values = torch.stack([metrics[k] for k in metric_keys])
         if world_size > 1:
             dist.reduce(metric_values, dst=0)
@@ -335,8 +461,8 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
             metric_values = metric_values.cpu().numpy()
             reduced_metrics = {k: metric_values[i] for i, k in enumerate(metric_keys)}
             
-            # Postprocess
-            count = max(reduced_metrics["count"], 1)  # Avoid NaNs
+            # Постобработка
+            count = max(reduced_metrics["count"], 1)  # Избегаем NaN
             reduced_metrics = {f"train/{k}": v / (global_batch_size if k.endswith("loss") else count) for k, v in reduced_metrics.items()}
 
             reduced_metrics["train/lr"] = lr_this_step
@@ -534,13 +660,20 @@ def load_synced_config(hydra_config: DictConfig, rank: int, world_size: int) -> 
 
 @hydra.main(config_path="config", config_name="cfg_pretrain", version_base=None)
 def launch(hydra_config: DictConfig):
+    """
+    Главная функция запуска предобучения модели.
+    Инициализирует распределенное обучение, загружает данные, создает модель и запускает цикл обучения.
+    
+    Параметры:
+        hydra_config: Конфигурация Hydra
+    """
     RANK = 0
     WORLD_SIZE = 1
     CPU_PROCESS_GROUP = None
 
-    # Initialize distributed training if in distributed environment (e.g. torchrun)
+    # Инициализация распределенного обучения, если в распределенной среде (например, torchrun)
     if "LOCAL_RANK" in os.environ:
-        # Initialize distributed, default device and dtype
+        # Инициализация распределенного обучения, устройство и тип данных по умолчанию
         dist.init_process_group(backend="nccl")
 
         RANK = dist.get_rank()
@@ -548,7 +681,7 @@ def launch(hydra_config: DictConfig):
 
         torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
         
-        # CPU GLOO process group
+        # Группа процессов CPU GLOO
         CPU_PROCESS_GROUP = dist.new_group(backend="gloo")
         assert (
             dist.get_rank(CPU_PROCESS_GROUP) == RANK and dist.get_world_size(CPU_PROCESS_GROUP) == WORLD_SIZE

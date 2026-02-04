@@ -1,3 +1,7 @@
+"""
+Модуль для построения датасета Maze-Hard.
+Загружает данные из HuggingFace Hub, применяет диэдрические аугментации и сохраняет в формате для обучения.
+"""
 from typing import Optional
 import math
 import os
@@ -13,18 +17,21 @@ from huggingface_hub import hf_hub_download
 from common import PuzzleDatasetMetadata, dihedral_transform
 
 
-CHARSET = "# SGo"
+CHARSET = "# SGo"  # Набор символов для лабиринта: стена, пробел, старт, цель, выход
 
 
 cli = ArgParser()
 
 
 class DataProcessConfig(BaseModel):
-    source_repo: str = "sapientinc/maze-30x30-hard-1k"
-    output_dir: str = "data/maze-30x30-hard-1k"
+    """
+    Конфигурация для обработки датасета Maze-Hard.
+    """
+    source_repo: str = "sapientinc/maze-30x30-hard-1k"  # Репозиторий HuggingFace Hub
+    output_dir: str = "data/maze-30x30-hard-1k"  # Директория для сохранения
 
-    subsample_size: Optional[int] = None
-    aug: bool = False
+    subsample_size: Optional[int] = None  # Размер подвыборки (если None, используется весь датасет)
+    aug: bool = False  # Применять ли диэдрические аугментации
 
 
 def convert_subset(set_name: str, config: DataProcessConfig):

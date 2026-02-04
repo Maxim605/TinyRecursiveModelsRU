@@ -1,32 +1,57 @@
+"""
+Общие утилиты для работы с датасетами головоломок.
+Включает метаданные датасета и функции для диэдрических преобразований.
+"""
 from typing import List, Optional
 
 import pydantic
 import numpy as np
 
 
-# Global list mapping each dihedral transform id to its inverse.
-# Index corresponds to the original tid, and the value is its inverse.
+# Глобальный список, сопоставляющий каждый идентификатор диэдрического преобразования с его обратным.
+# Индекс соответствует исходному tid, а значение - его обратному преобразованию.
 DIHEDRAL_INVERSE = [0, 3, 2, 1, 4, 5, 6, 7]
 
 
 class PuzzleDatasetMetadata(pydantic.BaseModel):
-    pad_id: int
-    ignore_label_id: Optional[int]
-    blank_identifier_id: int
-    vocab_size: int
-    seq_len: int
-    num_puzzle_identifiers: int
-    total_groups: int
-    mean_puzzle_examples: float
-    total_puzzles: int
-    sets: List[str]
+    """
+    Метаданные датасета головоломок.
+    Содержит информацию о структуре и параметрах датасета.
+    """
+    pad_id: int  # Идентификатор токена заполнения
+    ignore_label_id: Optional[int]  # Идентификатор метки для игнорирования
+    blank_identifier_id: int  # Идентификатор пустого идентификатора головоломки
+    vocab_size: int  # Размер словаря
+    seq_len: int  # Длина последовательности
+    num_puzzle_identifiers: int  # Количество идентификаторов головоломок
+    total_groups: int  # Общее количество групп головоломок
+    mean_puzzle_examples: float  # Среднее количество примеров на головоломку
+    total_puzzles: int  # Общее количество головоломок
+    sets: List[str]  # Список названий наборов данных
 
 
 def dihedral_transform(arr: np.ndarray, tid: int) -> np.ndarray:
-    """8 dihedral symmetries by rotate, flip and mirror"""
+    """
+    Применяет одно из 8 диэдрических преобразований (симметрии) к массиву.
+    Диэдрические преобразования включают повороты, отражения и их комбинации.
     
+    Параметры:
+        arr: Входной массив для преобразования
+        tid: Идентификатор преобразования (0-7)
+            0: тождественное преобразование
+            1: поворот на 90° по часовой
+            2: поворот на 180°
+            3: поворот на 270° по часовой
+            4: горизонтальное отражение
+            5: вертикальное отражение
+            6: транспонирование (отражение по главной диагонали)
+            7: отражение по побочной диагонали
+    
+    Возвращает:
+        Преобразованный массив
+    """
     if tid == 0:
-        return arr  # identity
+        return arr  # тождественное преобразование
     elif tid == 1:
         return np.rot90(arr, k=1)
     elif tid == 2:
@@ -34,16 +59,26 @@ def dihedral_transform(arr: np.ndarray, tid: int) -> np.ndarray:
     elif tid == 3:
         return np.rot90(arr, k=3)
     elif tid == 4:
-        return np.fliplr(arr)       # horizontal flip
+        return np.fliplr(arr)       # горизонтальное отражение
     elif tid == 5:
-        return np.flipud(arr)       # vertical flip
+        return np.flipud(arr)       # вертикальное отражение
     elif tid == 6:
-        return arr.T                # transpose (reflection along main diagonal)
+        return arr.T                # транспонирование (отражение по главной диагонали)
     elif tid == 7:
-        return np.fliplr(np.rot90(arr, k=1))  # anti-diagonal reflection
+        return np.fliplr(np.rot90(arr, k=1))  # отражение по побочной диагонали
     else:
         return arr
     
     
 def inverse_dihedral_transform(arr: np.ndarray, tid: int) -> np.ndarray:
+    """
+    Применяет обратное диэдрическое преобразование к массиву.
+    
+    Параметры:
+        arr: Входной массив для преобразования
+        tid: Идентификатор исходного преобразования
+    
+    Возвращает:
+        Массив после обратного преобразования
+    """
     return dihedral_transform(arr, DIHEDRAL_INVERSE[tid])

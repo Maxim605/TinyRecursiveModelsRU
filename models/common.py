@@ -1,3 +1,6 @@
+"""
+Модуль с общими утилитами для инициализации весов моделей.
+"""
 import math
 
 import torch
@@ -5,11 +8,23 @@ from torch import nn
 
 
 def trunc_normal_init_(tensor: torch.Tensor, std: float = 1.0, lower: float = -2.0, upper: float = 2.0):
-    # NOTE: PyTorch nn.init.trunc_normal_ is not mathematically correct, the std dev is not actually the std dev of initialized tensor
-    # This function is a PyTorch version of jax truncated normal init (default init method in flax)
-    # https://github.com/jax-ml/jax/blob/main/jax/_src/random.py#L807-L848
-    # https://github.com/jax-ml/jax/blob/main/jax/_src/nn/initializers.py#L162-L199
-
+    """
+    Инициализирует тензор усеченным нормальным распределением.
+    
+    Примечание: PyTorch nn.init.trunc_normal_ математически некорректен - стандартное отклонение
+    не соответствует реальному стандартному отклонению инициализированного тензора.
+    Эта функция - версия PyTorch для инициализации усеченного нормального распределения из JAX
+    (метод по умолчанию в Flax).
+    
+    Параметры:
+        tensor: Тензор для инициализации
+        std: Желаемое стандартное отклонение распределения
+        lower: Нижняя граница усечения (в единицах стандартного отклонения)
+        upper: Верхняя граница усечения (в единицах стандартного отклонения)
+    
+    Возвращает:
+        Инициализированный тензор
+    """
     with torch.no_grad():
         if std == 0:
             tensor.zero_()

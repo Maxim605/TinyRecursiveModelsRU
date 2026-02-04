@@ -1,3 +1,7 @@
+"""
+Модуль для построения датасета Sudoku-Extreme.
+Загружает данные из HuggingFace Hub, применяет аугментации и сохраняет в формате для обучения.
+"""
 from typing import Optional
 import os
 import csv
@@ -16,42 +20,56 @@ cli = ArgParser()
 
 
 class DataProcessConfig(BaseModel):
-    source_repo: str = "sapientinc/sudoku-extreme"
-    output_dir: str = "data/sudoku-extreme-full"
+    """
+    Конфигурация для обработки датасета Sudoku-Extreme.
+    """
+    source_repo: str = "sapientinc/sudoku-extreme"  # Репозиторий HuggingFace Hub
+    output_dir: str = "data/sudoku-extreme-full"  # Директория для сохранения
 
-    subsample_size: Optional[int] = None
-    min_difficulty: Optional[int] = None
-    num_aug: int = 0
+    subsample_size: Optional[int] = None  # Размер подвыборки (если None, используется весь датасет)
+    min_difficulty: Optional[int] = None  # Минимальная сложность головоломок
+    num_aug: int = 0  # Количество аугментаций на головоломку
 
 
 def shuffle_sudoku(board: np.ndarray, solution: np.ndarray):
-    # Create a random digit mapping: a permutation of 1..9, with zero (blank) unchanged
+    """
+    Применяет случайную перестановку к судоку, сохраняя валидность.
+    Использует перестановку цифр, транспонирование и перестановку блоков.
+    
+    Параметры:
+        board: Исходная доска судоку (9x9)
+        solution: Решение судоку (9x9)
+    
+    Возвращает:
+        Кортеж (shuffled_board, shuffled_solution) - переставленные доска и решение
+    """
+    # Создание случайной перестановки цифр: перестановка 1..9, ноль (пусто) без изменений
     digit_map = np.pad(np.random.permutation(np.arange(1, 10)), (1, 0))
     
-    # Randomly decide whether to transpose.
+    # Случайное решение о транспонировании
     transpose_flag = np.random.rand() < 0.5
 
-    # Generate a valid row permutation:
-    # - Shuffle the 3 bands (each band = 3 rows) and for each band, shuffle its 3 rows.
+    # Генерация валидной перестановки строк:
+    # - Перемешивание 3 блоков (каждый блок = 3 строки) и для каждого блока перемешивание его 3 строк
     bands = np.random.permutation(3)
     row_perm = np.concatenate([b * 3 + np.random.permutation(3) for b in bands])
 
-    # Similarly for columns (stacks).
+    # Аналогично для столбцов (стопок)
     stacks = np.random.permutation(3)
     col_perm = np.concatenate([s * 3 + np.random.permutation(3) for s in stacks])
 
-    # Build an 81->81 mapping. For each new cell at (i, j)
-    # (row index = i // 9, col index = i % 9),
-    # its value comes from old row = row_perm[i//9] and old col = col_perm[i%9].
+    # Построение отображения 81->81. Для каждой новой ячейки (i, j)
+    # (индекс строки = i // 9, индекс столбца = i % 9),
+    # её значение берется из старой строки = row_perm[i//9] и старого столбца = col_perm[i%9]
     mapping = np.array([row_perm[i // 9] * 9 + col_perm[i % 9] for i in range(81)])
 
     def apply_transformation(x: np.ndarray) -> np.ndarray:
-        # Apply transpose flag
+        # Применение флага транспонирования
         if transpose_flag:
             x = x.T
-        # Apply the position mapping.
+        # Применение отображения позиций
         new_board = x.flatten()[mapping].reshape(9, 9).copy()
-        # Apply digit mapping
+        # Применение отображения цифр
         return digit_map[new_board]
 
     return apply_transformation(board), apply_transformation(solution)

@@ -1,3 +1,7 @@
+"""
+Модуль для оценки качества модели на датасете ARC-AGI.
+Реализует метрики pass@K и агрегированное голосование предсказаний.
+"""
 from typing import Dict, Sequence, Optional
 import os
 import json
@@ -12,7 +16,15 @@ from dataset.common import PuzzleDatasetMetadata
 
 @njit
 def _crop(grid: np.ndarray):
-    """Find maximum-sized rectangle without any EOS token inside. """
+    """
+    Находит максимальный по размеру прямоугольник без токенов EOS внутри.
+    
+    Параметры:
+        grid: Сетка размером 30x30 с токенами
+    
+    Возвращает:
+        Обрезанная сетка без padding и EOS токенов
+    """
     grid = grid.reshape(30, 30)
 
     max_area = 0
@@ -21,7 +33,7 @@ def _crop(grid: np.ndarray):
     
     num_c = nc
     for num_r in range(1, nr + 1):
-        # Scan for maximum c
+        # Сканирование для максимального c
         for c in range(1, num_c + 1):
             x = grid[num_r - 1, c - 1]
             if (x < 2) | (x > 11):
@@ -37,6 +49,10 @@ def _crop(grid: np.ndarray):
 
 
 class ARC:
+    """
+    Оценщик качества для датасета ARC-AGI.
+    Вычисляет метрики pass@K и создает submission файлы.
+    """
     required_outputs = {"inputs", "puzzle_identifiers", "q_halt_logits", "preds"}
     
     def __init__(self, data_path: str, 
@@ -44,6 +60,14 @@ class ARC:
         submission_K: int = 2, 
         pass_Ks: Sequence[int] = (1, 2, 5, 10, 100, 1000), 
         aggregated_voting: bool = True):
+        """
+        Параметры:
+            data_path: Путь к директории с датасетом
+            eval_metadata: Метаданные тестового датасета
+            submission_K: Количество предсказаний для submission файла
+            pass_Ks: Список значений K для метрики pass@K
+            aggregated_voting: Использовать ли агрегированное голосование
+        """
         super().__init__()
         self.pass_Ks = pass_Ks
         self.submission_K = submission_K
@@ -61,13 +85,24 @@ class ARC:
         self._local_preds = {}
         
     def begin_eval(self):
+        """
+        Инициализирует оценку.
+        Очищает предыдущие предсказания, если не используется агрегированное голосование.
+        """
         if not self.aggregated_voting:
-            # Clear previous predictions
+            # Очистка предыдущих предсказаний
             self._local_hmap = {}
             self._local_preds = {}
     
     def update_batch(self, batch: Dict[str, torch.Tensor], preds: Dict[str, torch.Tensor]):
-        # Collect required outputs to CPU
+        """
+        Обновляет состояние оценщика новым батчем предсказаний.
+        
+        Параметры:
+            batch: Батч входных данных
+            preds: Батч предсказаний модели
+        """
+        # Сбор требуемых выходных данных на CPU
         outputs = {}
         q_values = None
 
@@ -81,7 +116,7 @@ class ARC:
                         
         assert q_values is not None
 
-        # Remove padding from outputs
+        # Удаление padding из выходных данных
         mask = outputs["puzzle_identifiers"] != self.blank_identifier_id
         outputs = {k: v[mask] for k, v in outputs.items()}
 
@@ -105,11 +140,23 @@ class ARC:
             self._local_preds[orig_name][input_hash].append((pred_hash, float(q)))
     
     def result(self, save_path: Optional[str], rank: int, world_size: int, group: Optional[torch.distributed.ProcessGroup] = None) -> Optional[Dict[str, float]]:
-        # Gather predictions to rank 0 for voting
+        """
+        Вычисляет финальные метрики и создает submission файл.
+        
+        Параметры:
+            save_path: Путь для сохранения submission файла
+            rank: Ранг процесса в распределенном обучении
+            world_size: Количество процессов
+            group: Группа процессов для распределенного обучения
+        
+        Возвращает:
+            Словарь с метриками (только на ранге 0) или None
+        """
+        # Сбор предсказаний на ранге 0 для голосования
         global_hmap_preds = [None for _ in range(world_size)] if rank == 0 else None
         dist.gather_object((self._local_hmap, self._local_preds), global_hmap_preds, dst=0, group=group)
         
-        # Rank 0 logic
+        # Логика ранга 0
         if rank != 0:
             return
 

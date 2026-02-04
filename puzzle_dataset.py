@@ -1,3 +1,7 @@
+"""
+Модуль для работы с датасетом головоломок.
+Реализует итерируемый датасет для обучения моделей на головоломках.
+"""
 import os
 import json
 from typing import Tuple, List, Dict, Optional
@@ -14,24 +18,41 @@ from argdantic import ArgParser
 from pydantic import BaseModel
 
 def _sample_batch(rng: np.random.Generator, group_order: np.ndarray, puzzle_indices: np.ndarray, group_indices: np.ndarray, start_index: int, global_batch_size: int):
-    # Pack examples into a full batch
+    """
+    Формирует батч примеров из головоломок.
+    
+    Параметры:
+        rng: Генератор случайных чисел
+        group_order: Массив порядка групп для выборки
+        puzzle_indices: Индексы начала каждой головоломки
+        group_indices: Индексы начала каждой группы
+        start_index: Начальный индекс в group_order
+        global_batch_size: Размер глобального батча
+    
+    Возвращает:
+        Кортеж (новый_start_index, batch_indices, batch_puzzle_indices):
+        - новый_start_index: Индекс для следующего батча
+        - batch_indices: Индексы примеров в батче
+        - batch_puzzle_indices: Индексы головоломок для каждого примера
+    """
+    # Упаковка примеров в полный батч
     batch = []
     batch_puzzle_indices = []
     current_size = 0
 
     while (start_index < group_order.size) and (current_size < global_batch_size):
-        # Pick a group and a puzzle from that group
+        # Выбираем группу и головоломку из этой группы
         group_id = group_order[start_index]
         puzzle_id = rng.integers(group_indices[group_id], group_indices[group_id + 1])
         start_index += 1
 
-        # Get range of the puzzle
+        # Получаем диапазон головоломки
         puzzle_start = puzzle_indices[puzzle_id]
         puzzle_size = int(puzzle_indices[puzzle_id + 1] - puzzle_start)
 
         append_size = min(puzzle_size, global_batch_size - current_size)
 
-        # Put into batch
+        # Добавляем в батч
         batch_puzzle_indices.append(np.full(append_size, puzzle_id, dtype=np.int32))
         batch.append(puzzle_start + np.random.choice(puzzle_size, append_size, replace=False))
 
@@ -41,21 +62,33 @@ def _sample_batch(rng: np.random.Generator, group_order: np.ndarray, puzzle_indi
 
 
 class PuzzleDatasetConfig(pydantic.BaseModel):
-    seed: int
-    dataset_paths: List[str]
-    global_batch_size: int
-    test_set_mode: bool
-    epochs_per_iter: int  # Batch X epochs in an iteration to reduce overhead.
-    rank: int
-    num_replicas: int
+    """
+    Конфигурация для датасета головоломок.
+    """
+    seed: int  # Семя для генератора случайных чисел
+    dataset_paths: List[str]  # Список путей к датасетам
+    global_batch_size: int  # Глобальный размер батча
+    test_set_mode: bool  # Режим тестового набора (True) или обучающего (False)
+    epochs_per_iter: int  # Количество эпох на итерацию (для уменьшения накладных расходов)
+    rank: int  # Ранг процесса в распределенном обучении
+    num_replicas: int  # Количество реплик в распределенном обучении
 
 class PuzzleDataset(IterableDataset):
+    """
+    Итерируемый датасет для головоломок.
+    Поддерживает распределенное обучение и ленивую загрузку данных.
+    """
     def __init__(self, config: PuzzleDatasetConfig, split: str = "train"):
+        """
+        Параметры:
+            config: Конфигурация датасета
+            split: Раздел датасета ('train' или 'test')
+        """
         super().__init__()
         self.config = config
         self.split = split
 
-        # Merge multiple metadata
+        # Объединение метаданных из нескольких датасетов
         prev_seq_len = None
         prev_vocab_size = None
         prev_pad_id = None
@@ -104,19 +137,32 @@ class PuzzleDataset(IterableDataset):
             sets=prev_sets
         )
 
-        # Checks
+        # Проверки
         assert self.config.global_batch_size % self.config.num_replicas == 0, f"Global batch size {self.config.global_batch_size} must be multiples of nodes {self.config.num_replicas}."
         self.local_batch_size = self.config.global_batch_size // self.config.num_replicas
 
-        # State
+        # Состояние
         self._data = None
         self._iters = 0
 
     def _load_metadata(self, dataset_path) -> PuzzleDatasetMetadata:
+        """
+        Загружает метаданные датасета из JSON файла.
+        
+        Параметры:
+            dataset_path: Путь к директории датасета
+        
+        Возвращает:
+            Метаданные датасета
+        """
         with open(os.path.join(dataset_path, self.split, "dataset.json"), "r") as f:
             return PuzzleDatasetMetadata(**json.load(f))
 
     def _lazy_load_dataset(self):
+        """
+        Ленивая загрузка данных датасета (загружается только при первом обращении).
+        Использует memory-mapped файлы для больших массивов.
+        """
         if self._data is not None:
             return
 
@@ -124,15 +170,15 @@ class PuzzleDataset(IterableDataset):
             "inputs": "r",
             "labels": "r",
 
-            # Keep indices in memory
+            # Храним индексы в памяти
             "puzzle_identifiers": None,
             "puzzle_indices": None,
             "group_indices": None
         }
 
-        # Load data
+        # Загрузка данных
         self._data = {}
-        for set_name in self.metadata.sets: # Load subset
+        for set_name in self.metadata.sets:  # Загрузка подмножества
             for i, dataset_path in enumerate(self.config.dataset_paths):
                 if i > 0:
                     set_name_ = set_name + str(i)
@@ -145,14 +191,23 @@ class PuzzleDataset(IterableDataset):
 
 
     def _collate_batch(self, batch):
-        # Convert dtype
+        """
+        Обрабатывает батч данных: преобразует типы, заменяет игнорируемые метки и добавляет padding.
+        
+        Параметры:
+            batch: Словарь с данными батча
+        
+        Возвращает:
+            Словарь с обработанными тензорами PyTorch
+        """
+        # Преобразование типов
         batch = {k: v.astype(np.int32) for k, v in batch.items()}
 
-        # Convert ignore label IDs
+        # Преобразование идентификаторов игнорируемых меток
         if self.metadata.ignore_label_id is not None:
             batch["labels"][batch["labels"] == self.metadata.ignore_label_id] = IGNORE_LABEL_ID
 
-        # Pad
+        # Добавление padding
         if batch["puzzle_identifiers"].size < self.local_batch_size:
             pad_size = self.local_batch_size - batch["puzzle_identifiers"].size
             pad_values = {
@@ -162,23 +217,33 @@ class PuzzleDataset(IterableDataset):
             }
             batch = {k: np.pad(v, ((0, pad_size), ) + ((0, 0), ) * (v.ndim - 1), constant_values=pad_values[k]) for k, v in batch.items()}
 
-        # To tensor
+        # Преобразование в тензоры
         return {k: torch.from_numpy(v) for k, v in batch.items()}
     
     def _iter_test(self):
+        """
+        Итератор для тестового режима.
+        Загружает примеры последовательно без перемешивания.
+        
+        Yields:
+            Кортеж (set_name, batch, global_batch_size):
+            - set_name: Название набора данных
+            - batch: Батч данных
+            - global_batch_size: Эффективный размер глобального батча
+        """
         for set_i, (set_name, dataset) in enumerate(self._data.items()):  # type: ignore
             total_examples = len(dataset["inputs"])
 
-            # Load examples one by one
+            # Загрузка примеров по одному
             start_index = 0
             while start_index < total_examples:
-                # Compute indices
+                # Вычисление индексов
                 end_index = min(total_examples, start_index + self.config.global_batch_size)
                 
                 local_start = start_index + self.config.rank * self.local_batch_size
                 local_end   = min(start_index + (self.config.rank + 1) * self.local_batch_size, end_index)
                 
-                # Get batch of examples, and also puzzle IDs
+                # Получение батча примеров и идентификаторов головоломок
                 puzzle_indices = []
                 puzzle_index = np.searchsorted(dataset["puzzle_indices"], local_start, side="right") - 1
                 for i in range(local_start, local_end):
@@ -195,15 +260,25 @@ class PuzzleDataset(IterableDataset):
 
                 yield set_name, batch, end_index - start_index
                 
-                # Advance to next batch
+                # Переход к следующему батчу
                 start_index += self.config.global_batch_size
 
     def _iter_train(self):
+        """
+        Итератор для обучающего режима.
+        Случайно перемешивает группы головоломок и формирует батчи.
+        
+        Yields:
+            Кортеж (set_name, batch, global_effective_batch_size):
+            - set_name: Название набора данных
+            - batch: Батч данных
+            - global_effective_batch_size: Эффективный размер глобального батча
+        """
         for set_name, dataset in self._data.items():  # type: ignore
-            # Increase epoch count
+            # Увеличение счетчика эпох
             self._iters += 1
 
-            # Randomly shuffle groups
+            # Случайное перемешивание групп
             rng = np.random.Generator(np.random.Philox(seed=self.config.seed + self._iters))
 
             group_order = np.concatenate([rng.permutation(dataset["group_indices"].size - 1) for _i in range(self.config.epochs_per_iter)])
@@ -219,10 +294,10 @@ class PuzzleDataset(IterableDataset):
                     global_batch_size=self.config.global_batch_size,
                 )
 
-                # Select current rank and collate
-                global_effective_batch_size = batch_puzzle_indices.size  # Global effective batch size, excluding pads
+                # Выбор текущего ранга и формирование батча
+                global_effective_batch_size = batch_puzzle_indices.size  # Глобальный эффективный размер батча, исключая padding
 
-                # Drop last batch
+                # Пропуск последнего неполного батча
                 if global_effective_batch_size < self.config.global_batch_size:
                     break
 
@@ -237,12 +312,19 @@ class PuzzleDataset(IterableDataset):
                 yield set_name, batch, global_effective_batch_size
                 
     def __iter__(self):
+        """
+        Основной итератор датасета.
+        Выбирает режим итерации в зависимости от конфигурации.
+        
+        Yields:
+            Батчи данных в зависимости от режима (train/test)
+        """
         worker_info = get_worker_info()
         assert worker_info is None or worker_info.num_workers == 1, "Multithreaded data loading is not currently supported."
         
         self._lazy_load_dataset()
         
-        # Iterate using specified mode
+        # Итерация с использованием указанного режима
         if self.config.test_set_mode:
             yield from self._iter_test()
         else:
