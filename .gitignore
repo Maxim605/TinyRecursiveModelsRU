@@ -1,1 +1,5 @@
 venv/
+wandb/
+checkpoints/
+data/
+outputs/
